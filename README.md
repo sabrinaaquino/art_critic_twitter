@@ -31,7 +31,7 @@ art_critic_twitter/
 
 1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/sabrinaaquino/art_critic_twitter.git
    cd art_critic_twitter
    ```
 
