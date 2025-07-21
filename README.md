@@ -1,72 +1,175 @@
 # Venice Art Critic Twitter Bot
 
-A Twitter/X bot that critiques artwork using the Venice API. Similar to the Discord art critic bot, this bot responds to mentions with image attachments and provides honest, direct art critiques.
+A modular Twitter bot that critiques artwork using the Venice AI API. The bot monitors mentions and responds with art critiques when users share images.
 
 ## Features
 
-- Responds to Twitter mentions with image attachments
-- Uses Venice API for intelligent art critique
-- Provides honest and direct feedback on artwork
-- Handles multiple image formats
-- Rate limiting and error handling included
+- **Modular Architecture**: Clean separation of concerns with dedicated modules
+- **State Management**: Tracks processed tweets to avoid duplicates
+- **Configurable**: Easy to customize behavior through configuration
+- **Robust Error Handling**: Graceful handling of API errors and network issues
+- **Logging**: Comprehensive logging for monitoring and debugging
 
-## Setup
+## Project Structure
 
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
+```
+art_critic_twitter/
+├── main.py                 # Main entry point
+├── bot.py                  # Core bot logic and orchestration
+├── config.py               # Configuration management
+├── state.py                # State persistence for processed tweets
+├── twitter_client.py       # Twitter API interactions
+├── venice_api.py           # Venice AI API interactions
+├── image_processor.py      # Image downloading and processing
+├── twitter_art_critic.py   # Legacy entry point
+├── requirements.txt         # Python dependencies
+├── env_example.txt         # Environment variables template
+└── README.md              # This file
 ```
 
-### 2. Twitter API Setup
+## Installation
 
-1. Go to [Twitter Developer Portal](https://developer.twitter.com/)
-2. Create a new app and get your API credentials
-3. You'll need:
-   - Bearer Token
-   - API Key
-   - API Secret
-   - Access Token
-   - Access Token Secret
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd art_critic_twitter
+   ```
 
-### 3. Venice API Setup
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-1. Get your Venice API key from [Venice AI](https://venice.ai/)
-2. Add it to your environment variables
+3. **Set up environment variables**:
+   ```bash
+   cp env_example.txt .env
+   ```
+   
+   Edit `.env` with your API keys:
+   ```
+   TWITTER_BEARER_TOKEN=your_twitter_bearer_token
+   TWITTER_API_KEY=your_twitter_api_key
+   TWITTER_API_SECRET=your_twitter_api_secret
+   TWITTER_ACCESS_TOKEN=your_twitter_access_token
+   TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
+   VENICE_API_KEY=your_venice_api_key
+   ```
 
-### 4. Environment Variables
+## Usage
 
-Copy `env_example.txt` to `.env` and fill in your credentials:
+### Running the Bot
 
+**Using the new modular structure (recommended)**:
 ```bash
-cp env_example.txt .env
+python main.py
 ```
 
-Then edit `.env` with your actual API keys.
-
-### 5. Run the Bot
-
+**Using the legacy entry point**:
 ```bash
 python twitter_art_critic.py
 ```
 
-## Usage
+### How It Works
 
-1. Mention the bot in a tweet with an image attachment
-2. The bot will analyze the image and provide an art critique
-3. If no image is attached, the bot will ask for one
+1. **Mention Monitoring**: The bot checks for new mentions every 60 seconds
+2. **Image Detection**: When a mention contains an image, it downloads and processes it
+3. **Art Critique**: The image is sent to Venice AI for analysis and critique generation
+4. **Response**: The bot replies to the original tweet with the critique
+5. **State Tracking**: Processed tweets are tracked to avoid duplicate responses
 
-## Requirements
+## Configuration
 
-- Python 3.7+
-- Twitter API v2 access
-- Venice API key
-- Internet connection for API calls
+All configuration is centralized in `config.py`. Key settings include:
+
+- `CHECK_INTERVAL`: Seconds between mention checks (default: 60)
+- `MAX_MENTIONS_PER_CHECK`: Maximum mentions to process per cycle (default: 10)
+- `SYSTEM_PROMPT`: The art critic personality prompt
+- `NO_IMAGE_MESSAGE`: Message when no image is found
+- `ERROR_MESSAGE`: Message when API errors occur
+
+## Modules
+
+### `main.py`
+Entry point that initializes logging and starts the bot.
+
+### `bot.py`
+Core bot logic that orchestrates all components:
+- Manages the main bot loop
+- Coordinates between Twitter and Venice APIs
+- Handles state persistence
+
+### `config.py`
+Centralized configuration management:
+- Environment variable loading
+- Configuration validation
+- Default settings
+
+### `state.py`
+State persistence for tracking processed tweets:
+- JSON-based storage
+- Prevents duplicate processing
+- Automatic save/load
+
+### `twitter_client.py`
+Twitter API interactions:
+- Client initialization
+- Mention retrieval
+- Tweet replies
+
+### `venice_api.py`
+Venice AI API integration:
+- Image analysis requests
+- Critique generation
+- Error handling
+
+### `image_processor.py`
+Image handling utilities:
+- Image downloading
+- Media attachment processing
+- Error handling for image operations
+
+## API Requirements
+
+### Twitter API
+- Bearer Token
+- API Key
+- API Secret
+- Access Token
+- Access Token Secret
+
+### Venice AI API
+- API Key for image analysis
 
 ## Error Handling
 
-The bot includes comprehensive error handling for:
-- API rate limits
-- Network issues
-- Invalid image formats
-- Missing API credentials 
+The bot includes comprehensive error handling:
+- **API Rate Limits**: Automatic retry with exponential backoff
+- **Network Issues**: Graceful degradation and retry
+- **Invalid Images**: Skip processing and notify user
+- **Missing Environment Variables**: Clear error messages
+
+## Logging
+
+The bot uses structured logging with configurable levels:
+- **INFO**: Normal operation messages
+- **ERROR**: Error conditions and exceptions
+- **DEBUG**: Detailed debugging information (when enabled)
+
+## State Management
+
+The bot maintains state in `state.json` to track:
+- Processed tweet IDs
+- Avoid duplicate responses
+- Persist across restarts
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
