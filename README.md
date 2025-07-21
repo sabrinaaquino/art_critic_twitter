@@ -2,31 +2,6 @@
 
 A modular Twitter bot that critiques artwork using the Venice AI API. The bot monitors mentions and responds with art critiques when users share images.
 
-## Features
-
-- **Modular Architecture**: Clean separation of concerns with dedicated modules
-- **State Management**: Tracks processed tweets to avoid duplicates
-- **Configurable**: Easy to customize behavior through configuration
-- **Robust Error Handling**: Graceful handling of API errors and network issues
-- **Logging**: Comprehensive logging for monitoring and debugging
-
-## Project Structure
-
-```
-art_critic_twitter/
-├── main.py                 # Main entry point
-├── bot.py                  # Core bot logic and orchestration
-├── config.py               # Configuration management
-├── state.py                # State persistence for processed tweets
-├── twitter_client.py       # Twitter API interactions
-├── venice_api.py           # Venice AI API interactions
-├── image_processor.py      # Image downloading and processing
-├── twitter_art_critic.py   # Legacy entry point
-├── requirements.txt         # Python dependencies
-├── env_example.txt         # Environment variables template
-└── README.md              # This file
-```
-
 ## Installation
 
 1. **Clone the repository**:
@@ -62,11 +37,6 @@ art_critic_twitter/
 **Using the new modular structure (recommended)**:
 ```bash
 python main.py
-```
-
-**Using the legacy entry point**:
-```bash
-python twitter_art_critic.py
 ```
 
 ### How It Works
@@ -148,28 +118,9 @@ The bot includes comprehensive error handling:
 - **Invalid Images**: Skip processing and notify user
 - **Missing Environment Variables**: Clear error messages
 
-## Logging
-
-The bot uses structured logging with configurable levels:
-- **INFO**: Normal operation messages
-- **ERROR**: Error conditions and exceptions
-- **DEBUG**: Detailed debugging information (when enabled)
-
 ## State Management
 
 The bot maintains state in `state.json` to track:
 - Processed tweet IDs
 - Avoid duplicate responses
 - Persist across restarts
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 
