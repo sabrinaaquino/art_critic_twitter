@@ -1,126 +1,69 @@
-# Venice Art Critic Twitter Bot
+# Venice X Bot
 
-A modular Twitter bot that critiques artwork using the Venice AI API. The bot monitors mentions and responds with art critiques when users share images.
+This is an unbiased Python-based Twitter bot that uses the Venice AI API to provide intelligent, context-aware replies to user mentions. It can analyze both text and images, understands conversational context, and leverages a three-step AI process to deliver high-quality, educational responses.
 
-## Installation
+The bot is designed to be robust, with proper error handling, rate-limiting, conversation intelligence, and state management to ensure it runs smoothly and respectfully on the Twitter platform.
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/sabrinaaquino/art_critic_twitter.git
-   cd art_critic_twitter
-   ```
+## Core Features
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+-   **Context-Aware Replies:** The bot intelligently detects conversation flow, fetches parent tweets for context, and distinguishes between new conversations and threaded replies.
+-   **Three-Step AI Analysis:** For every query, the bot uses a sophisticated three-call process:
+    1.  **Expert Analysis:** Sends the query to a web-enabled model for comprehensive analysis with current information.
+    2.  **Content Summarization:** Distills key facts and findings from the detailed analysis.
+    3.  **Tweet Crafting:** Formats the final response with automatic validation against robotic phrases.
+-   **Smart Model Selection:** Uses `llama-3.3-70b` for web-enabled text, `mistral-31-24b` for images, and `venice-uncensored` for processing.
+-   **Uncensored Educational Approach:** Provides comprehensive information on controversial topics while declining only harassment, doxxing, threats, and spam.
+-   **Web-Enabled Intelligence:** Uses Venice's native web search for real-time information and fact-checking without knowledge cutoff mentions.
+-   **Natural Communication:** No robotic greetings, direct language, and technical responses without moral advice.
 
-3. **Set up environment variables**:
-   ```bash
-   cp env_example.txt .env
-   ```
-   
-   Edit `.env` with your API keys:
-   ```
-   TWITTER_BEARER_TOKEN=your_twitter_bearer_token
-   TWITTER_API_KEY=your_twitter_api_key
-   TWITTER_API_SECRET=your_twitter_api_secret
-   TWITTER_ACCESS_TOKEN=your_twitter_access_token
-   TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
-   VENICE_API_KEY=your_venice_api_key
-   ```
+## Project Structure
 
-## Usage
+The project is organized into a modular structure for clarity and maintainability:
 
-### Running the Bot
+```
+/venice-x-bot
+|-- main.py                 # Main entry point to run the bot
+|-- bot.py                  # Core bot logic and event loop
+|-- config.py               # All configuration, API keys, and prompts
+|-- state.py                # Handles state management (processed tweets)
+|-- clients.py              # Initializes the Twitter API client
+|-- twitter_client.py       # Functions for interacting with the Twitter API
+|-- venice_api.py           # Functions for interacting with the Venice AI API
+|-- image_processor.py      # Handles downloading and processing images
+|-- requirements.txt        # Python dependencies
+|-- env_example.txt         # Example file for environment variables
+|-- README.md               # This file
+```
 
-**Using the new modular structure (recommended)**:
+## Setup & Installation
+
+1.  **Clone the Repository:**
+    ```bash
+    git clone <your-repo-url>
+    cd venice-x-bot
+    ```
+
+2.  **Create a Virtual Environment:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+    ```
+
+3.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Configure Environment Variables:**
+    -   Rename `env_example.txt` to `.env`.
+    -   Open the `.env` file and fill in your API keys and tokens from the [Twitter Developer Portal](https://developer.twitter.com/en/portal/dashboard) and [Venice AI](https://www.venice.ai/).
+
+## How to Run the Bot
+
+With your environment configured, simply run the `main.py` file:
+
 ```bash
 python main.py
 ```
 
-### How It Works
-
-1. **Mention Monitoring**: The bot checks for new mentions every 60 seconds
-2. **Image Detection**: When a mention contains an image, it downloads and processes it
-3. **Art Critique**: The image is sent to Venice AI for analysis and critique generation
-4. **Response**: The bot replies to the original tweet with the critique
-5. **State Tracking**: Processed tweets are tracked to avoid duplicate responses
-
-## Configuration
-
-All configuration is centralized in `config.py`. Key settings include:
-
-- `CHECK_INTERVAL`: Seconds between mention checks (default: 60)
-- `MAX_MENTIONS_PER_CHECK`: Maximum mentions to process per cycle (default: 10)
-- `SYSTEM_PROMPT`: The art critic personality prompt
-- `NO_IMAGE_MESSAGE`: Message when no image is found
-- `ERROR_MESSAGE`: Message when API errors occur
-
-## Modules
-
-### `main.py`
-Entry point that initializes logging and starts the bot.
-
-### `bot.py`
-Core bot logic that orchestrates all components:
-- Manages the main bot loop
-- Coordinates between Twitter and Venice APIs
-- Handles state persistence
-
-### `config.py`
-Centralized configuration management:
-- Environment variable loading
-- Configuration validation
-- Default settings
-
-### `state.py`
-State persistence for tracking processed tweets:
-- JSON-based storage
-- Prevents duplicate processing
-- Automatic save/load
-
-### `twitter_client.py`
-Twitter API interactions:
-- Client initialization
-- Mention retrieval
-- Tweet replies
-
-### `venice_api.py`
-Venice AI API integration:
-- Image analysis requests
-- Critique generation
-- Error handling
-
-### `image_processor.py`
-Image handling utilities:
-- Image downloading
-- Media attachment processing
-- Error handling for image operations
-
-## API Requirements
-
-### Twitter API
-- Bearer Token
-- API Key
-- API Secret
-- Access Token
-- Access Token Secret
-
-### Venice AI API
-- API Key for image analysis
-
-## Error Handling
-
-The bot includes comprehensive error handling:
-- **API Rate Limits**: Automatic retry with exponential backoff
-- **Network Issues**: Graceful degradation and retry
-- **Invalid Images**: Skip processing and notify user
-- **Missing Environment Variables**: Clear error messages
-
-## State Management
-
-The bot maintains state in `state.json` to track:
-- Processed tweet IDs
-- Avoid duplicate responses
-- Persist across restarts
+The bot will initialize and start monitoring for new mentions. To stop the bot, press `Ctrl+C`. 
