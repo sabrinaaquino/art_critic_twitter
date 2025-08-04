@@ -10,8 +10,9 @@ class State:
     def load(self):
         try:
             with open(self.filename, 'r') as f:
+                # Ensure all loaded IDs are strings to prevent type mismatches
                 tweets = json.load(f)
-                self.processed_tweets = set(tweets)
+                self.processed_tweets = {str(tweet_id) for tweet_id in tweets}
         except FileNotFoundError:
             self.processed_tweets = set()
 
