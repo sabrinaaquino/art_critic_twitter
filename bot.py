@@ -1,5 +1,7 @@
 import logging
 import time
+import requests
+from datetime import datetime, timezone, timedelta
 from config import Config
 from state import State
 from clients import get_twitter_client
@@ -55,6 +57,24 @@ class VeniceBot:
             self.hourly_reply_count = 0
             self.hourly_check_time = time.time()
 
+    def _is_tweet_too_old(self, tweet):
+        """Checks if tweet is older than the configured maximum age."""
+        try:
+            # Twitter created_at is in UTC format like "2025-01-14T12:34:56.000Z"
+            tweet_time = datetime.fromisoformat(tweet.created_at.replace('Z', '+00:00'))
+            current_time = datetime.now(timezone.utc)
+            time_diff = current_time - tweet_time
+            
+            if time_diff > timedelta(hours=Config.MAX_TWEET_AGE_HOURS):
+                logger.info(f"Tweet {tweet.id} is {time_diff} old (>{Config.MAX_TWEET_AGE_HOURS}h). Skipping.")
+                return True
+            
+            logger.debug(f"Tweet {tweet.id} is {time_diff} old (<{Config.MAX_TWEET_AGE_HOURS}h). Processing.")
+            return False
+        except Exception as e:
+            logger.warning(f"Could not parse tweet {tweet.id} timestamp: {e}. Processing anyway.")
+            return False
+
     def _extract_context_from_tweet(self, tweet, media_lookup):
         """Extracts context text and images from a tweet, including quote tweets."""
         context_text = None
@@ -75,8 +95,13 @@ class VeniceBot:
         
         return context_text, context_images
     
-    def _extract_full_context(self, tweet_response):
+    def _extract_full_context(self, tweet_response, depth=0, max_depth=3):
         """Extracts comprehensive context from a tweet response including text, images, and quote tweets."""
+        # Prevent infinite recursion
+        if depth >= max_depth:
+            logger.debug(f"Reached max quote tweet depth ({max_depth}), stopping recursion.")
+            return tweet_response.data.text, []
+            
         context_text = tweet_response.data.text
         context_images = []
         
@@ -89,7 +114,6 @@ class VeniceBot:
                     media = media_lookup.get(media_key)
                     if media and media.type == 'photo':
                         try:
-                            import requests
                             response = requests.get(media.url)
                             if response.status_code == 200:
                                 context_images.append(response.content)
@@ -97,14 +121,14 @@ class VeniceBot:
                         except Exception as e:
                             logger.warning(f"Failed to download context image: {e}")
         
-        # Check for quote tweets in the context tweet
+        # Check for quote tweets in the context tweet (with depth limit)
         if hasattr(tweet_response.data, 'referenced_tweets') and tweet_response.data.referenced_tweets:
             for ref in tweet_response.data.referenced_tweets:
                 if ref.type == 'quoted':
-                    logger.info(f"Context tweet is quoting tweet {ref.id}. Fetching nested quoted tweet.")
+                    logger.info(f"Context tweet is quoting tweet {ref.id}. Fetching nested quoted tweet (depth {depth+1}).")
                     nested_quoted_response = get_tweet_by_id(self.client, ref.id)
                     if nested_quoted_response and nested_quoted_response.data:
-                        quoted_text, quoted_images = self._extract_full_context(nested_quoted_response)
+                        quoted_text, quoted_images = self._extract_full_context(nested_quoted_response, depth + 1, max_depth)
                         context_text += f"\n\n[Quoted tweet: {quoted_text}]"
                         context_images.extend(quoted_images)
                         logger.info(f"Successfully extracted nested quoted tweet {ref.id}.")
@@ -112,52 +136,70 @@ class VeniceBot:
         return context_text, context_images
 
     def _handle_image_tweet(self, tweet, image_bytes, context_text=None):
-        """Handles a tweet with an image using the three-step AI chain."""
-        logger.info(f"Handling image tweet {tweet.id} with three-step analysis.")
+        """Handles image tweets with three-step AI pipeline."""
+        user_query = tweet.text.replace("@venice_bot", "").strip()
         
-        # 1. Get detailed analysis
-        analysis = get_expert_analysis(tweet.text, image_bytes=image_bytes, context_text=context_text)
-        if not analysis or analysis == Config.ERROR_MESSAGE:
-            logger.error(f"Failed to get analysis for image tweet {tweet.id}.")
-            return
-
-        # 2. Summarize the analysis
-        summary = summarize_analysis(analysis)
-        if not summary or summary == Config.ERROR_MESSAGE:
-            logger.error(f"Failed to summarize analysis for image tweet {tweet.id}.")
-            return
-            
-        # 3. Craft the final tweet
-        final_reply = craft_tweet(summary)
-        if final_reply and final_reply != Config.ERROR_MESSAGE:
-            reply_to_tweet(self.client, tweet.id, final_reply)
-            self.hourly_reply_count += 1
+        if context_text and "[CONTINUING CONVERSATION]" in context_text:
+            use_context = context_text
         else:
-            logger.error(f"Failed to craft tweet for image tweet {tweet.id}.")
+            use_context = None
+        
+        try:
+            analysis = get_expert_analysis(user_query, image_bytes=image_bytes, context_text=use_context)
+            if analysis == Config.ERROR_MESSAGE:
+                return False
+            
+            summary = summarize_analysis(analysis)
+            if summary == Config.ERROR_MESSAGE:
+                return False
+            
+            final_reply = craft_tweet(summary)
+            if not final_reply or final_reply == Config.ERROR_MESSAGE:
+                return False
+            
+            reply_response = reply_to_tweet(self.client, tweet.id, final_reply)
+            if reply_response is not None:
+                self.hourly_reply_count += 1
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error processing image tweet {tweet.id}: {e}")
+            return False
 
     def _handle_text_tweet(self, tweet, context_text=None):
-        """Handles a text-only tweet using the three-step AI chain."""
-        logger.info(f"Handling text tweet {tweet.id} with three-step analysis.")
-
-        # 1. Get detailed analysis
-        analysis = get_expert_analysis(tweet.text, context_text=context_text)
-        if not analysis or analysis == Config.ERROR_MESSAGE:
-            logger.error(f"Failed to get analysis for text tweet {tweet.id}.")
-            return
-            
-        # 2. Summarize the analysis
-        summary = summarize_analysis(analysis)
-        if not summary or summary == Config.ERROR_MESSAGE:
-            logger.error(f"Failed to summarize analysis for text tweet {tweet.id}.")
-            return
-            
-        # 3. Craft the final tweet
-        final_reply = craft_tweet(summary)
-        if final_reply and final_reply != Config.ERROR_MESSAGE:
-            reply_to_tweet(self.client, tweet.id, final_reply)
-            self.hourly_reply_count += 1
+        """Handles text tweets with three-step AI pipeline."""
+        user_query = tweet.text.replace("@venice_bot", "").strip()
+        
+        if context_text and "[CONTINUING CONVERSATION]" in context_text:
+            use_context = context_text
         else:
-            logger.error(f"Failed to craft tweet for text tweet {tweet.id}.")
+            use_context = None
+        
+        try:
+            analysis = get_expert_analysis(user_query, context_text=use_context)
+            if analysis == Config.ERROR_MESSAGE:
+                return False
+            
+            summary = summarize_analysis(analysis)
+            if summary == Config.ERROR_MESSAGE:
+                return False
+            
+            final_reply = craft_tweet(summary)
+            if not final_reply or final_reply == Config.ERROR_MESSAGE:
+                return False
+            
+            reply_response = reply_to_tweet(self.client, tweet.id, final_reply)
+            if reply_response is not None:
+                self.hourly_reply_count += 1
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error processing text tweet {tweet.id}: {e}")
+            return False
 
     def _process_single_tweet(self, tweet, media_lookup, user_lookup):
         """Processes a single mention, fetching context if it's a reply."""
@@ -175,6 +217,12 @@ class VeniceBot:
         # Skip tweets authored by the bot itself (but allow mentions in bot's tweets)
         if author.id == self.bot_user_id:
             logger.info(f"Skipping tweet {tweet.id} because it's authored by the bot itself.")
+            self.state.add_tweet(tweet.id)
+            return
+
+        # Skip tweets older than 24 hours
+        if self._is_tweet_too_old(tweet):
+            logger.info(f"Skipping tweet {tweet.id} because it's older than {Config.MAX_TWEET_AGE_HOURS} hours.")
             self.state.add_tweet(tweet.id)
             return
 
@@ -222,13 +270,21 @@ class VeniceBot:
             image_bytes = context_images[0]
             logger.info(f"Using context image for analysis of tweet {tweet.id}")
         
+        # Handle the tweet and check if reply was successful
+        reply_successful = False
         if image_bytes:
-            self._handle_image_tweet(tweet, image_bytes, context_text=context_text)
+            reply_successful = self._handle_image_tweet(tweet, image_bytes, context_text=context_text)
         else:
-            self._handle_text_tweet(tweet, context_text=context_text)
+            reply_successful = self._handle_text_tweet(tweet, context_text=context_text)
         
-        self.state.add_tweet(tweet.id)
-        time.sleep(2)
+        # Only mark as processed if the reply was successfully sent
+        if reply_successful:
+            logger.info(f"Reply sent successfully for tweet {tweet.id}. Marking as processed.")
+            self.state.add_tweet(tweet.id)
+        else:
+            logger.warning(f"Reply failed for tweet {tweet.id}. NOT marking as processed - will retry next time.")
+        
+        time.sleep(Config.TWEET_PROCESSING_DELAY)
 
     def process_mentions(self):
         """Fetches and processes new mentions."""
@@ -254,7 +310,11 @@ class VeniceBot:
         logger.info(f"Found {len(mentions.data)} new mentions to process.")
         for tweet in reversed(mentions.data):  # Process oldest first
             try:
-                logger.info(f"Starting to process tweet {tweet.id} from @{user_lookup.get(tweet.author_id, {}).get('username', 'unknown')}")
+                # Efficiently get username with fallback
+                author = user_lookup.get(tweet.author_id)
+                username = author.username if author and hasattr(author, 'username') else 'unknown'
+                
+                logger.info(f"Starting to process tweet {tweet.id} from @{username}")
                 self._process_single_tweet(tweet, media_lookup, user_lookup)
                 logger.info(f"Finished processing tweet {tweet.id}")
             except Exception as e:
