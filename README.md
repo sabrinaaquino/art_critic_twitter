@@ -50,7 +50,7 @@ A Python-based Twitter bot powered by Venice AI that provides intelligent, uncen
 
 1. **Clone the Repository:**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/sabrinaaquino/twitter_bot_venice.git
    cd venice-x-bot
    ```
 
