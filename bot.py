@@ -177,15 +177,7 @@ class VeniceBot:
             if summary == Config.ERROR_MESSAGE:
                 return False
             
-            # Build context bundle for final model
-            bundle = {
-                'user_text': tweet.text,
-                'parent_text': use_context or "",
-                'quoted_text': "",
-                'media_present': True
-            }
-            
-            final_reply = craft_tweet(summary, full_analysis=analysis, context_bundle=bundle)
+            final_reply = craft_tweet(summary, full_analysis=analysis)
             if not final_reply or final_reply == Config.ERROR_MESSAGE:
                 return False
             
@@ -221,15 +213,7 @@ class VeniceBot:
             if summary == Config.ERROR_MESSAGE:
                 return False
             
-            # Build context bundle for final model
-            bundle = {
-                'user_text': tweet.text,
-                'parent_text': use_context or "",
-                'quoted_text': "",
-                'media_present': False
-            }
-            
-            final_reply = craft_tweet(summary, full_analysis=analysis, context_bundle=bundle)
+            final_reply = craft_tweet(summary, full_analysis=analysis)
             if not final_reply or final_reply == Config.ERROR_MESSAGE:
                 return False
             

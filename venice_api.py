@@ -106,41 +106,24 @@ def summarize_analysis(analysis_text: str) -> str:
         logger.error(f"Error in Step 2 (Summarization): {e}")
         return Config.ERROR_MESSAGE
 
-def craft_tweet(summary_text: str, full_analysis: str = None, context_bundle: dict = None) -> str:
+def craft_tweet(summary_text: str, full_analysis: str = None) -> str:
     """
     STEP 3: Craft the final uncensored tweet.
     Uses venice-uncensored.
     If full_analysis is provided, the model should reconsider and improve the take using that reasoning.
-    If context_bundle is provided, include raw conversational context to preserve specifics.
     """
     crafter_prompt = Config.TWEET_CRAFTER_SYSTEM_PROMPT
 
-    # Prepare user content
-    parts = []
-    if context_bundle:
-        # Keep this compact but explicit
-        user_text = context_bundle.get('user_text') or ''
-        parent_text = context_bundle.get('parent_text') or ''
-        quoted_text = context_bundle.get('quoted_text') or ''
-        media_note = 'media_present=true' if context_bundle.get('media_present') else 'media_present=false'
-        parts.append("--- Context Bundle ---")
-        parts.append(f"User: {user_text}")
-        if parent_text:
-            parts.append(f"Parent: {parent_text}")
-        if quoted_text:
-            parts.append(f"Quoted: {quoted_text}")
-        parts.append(f"Notes: {media_note}")
-        parts.append("")
-
+    user_content = ""
     if full_analysis:
-        parts.append("--- Full Analysis (Step 1) ---")
-        parts.append(full_analysis)
-        parts.append("")
-
-    parts.append("--- Key Points (Step 2) ---")
-    parts.append(summary_text)
-
-    user_content = "\n".join(parts)
+        user_content = (
+            "Re-evaluate and improve the take using the analysis below. "
+            "Preserve correct facts, strengthen reasoning, and produce the final tweet.\n\n"
+            f"--- Full Analysis (Step 1) ---\n{full_analysis}\n\n"
+            f"--- Key Points (Step 2) ---\n{summary_text}"
+        )
+    else:
+        user_content = f"Points to rewrite into a tweet:\n{summary_text}"
 
     payload = {
         "model": Config.VENICE_MODEL_UNCENSORED,
@@ -163,9 +146,10 @@ def craft_tweet(summary_text: str, full_analysis: str = None, context_bundle: di
             # Retry with stricter prompt using the same model
             strict_prompt = f"""{crafter_prompt}
 
-CRITICAL: The following response contained banned phrases. Rewrite it without ANY greetings, moral advice, or generic endings.
-Use the provided context, analysis, and key points to produce a direct answer.
-"""
+CRITICAL: The following response contained banned phrases. Rewrite it without ANY greetings, moral advice, or generic endings:
+{initial_tweet}
+
+Provide ONLY a direct answer with specific facts."""
             
             retry_payload = {
                 "model": Config.VENICE_MODEL_UNCENSORED,
