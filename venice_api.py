@@ -102,60 +102,42 @@ def summarize_analysis(analysis_text: str) -> str:
         response = requests.post(VENICE_URL, json=payload, headers=VENICE_HEADERS)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.HTTPError as e:
-        if response.status_code == 500:
-            fallback_payload = {
-                "model": Config.VENICE_MODEL_UNCENSORED_FALLBACK,
-                "messages": [{"role": "user", "content": f"{summarizer_prompt}\n\n---Text to Summarize---\n{analysis_text}"}]
-            }
-            
-            try:
-                fallback_response = requests.post(VENICE_URL, json=fallback_payload, headers=VENICE_HEADERS)
-                fallback_response.raise_for_status()
-                return fallback_response.json()["choices"][0]["message"]["content"].strip()
-            except Exception:
-                return Config.ERROR_MESSAGE
-        else:
-            return Config.ERROR_MESSAGE
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in Step 2 (Summarization): {e}")
         return Config.ERROR_MESSAGE
 
-def craft_tweet(summary_text: str) -> str:
+def craft_tweet(summary_text: str, full_analysis: str = None) -> str:
     """
     STEP 3: Craft the final uncensored tweet.
-    Uses venice-uncensored with fallback to dolphin if unavailable.
+    Uses venice-uncensored.
+    If full_analysis is provided, the model should reconsider and improve the take using that reasoning.
     """
     crafter_prompt = Config.TWEET_CRAFTER_SYSTEM_PROMPT
+
+    user_content = ""
+    if full_analysis:
+        user_content = (
+            "Re-evaluate and improve the take using the analysis below. "
+            "Preserve correct facts, strengthen reasoning, and produce the final tweet.\n\n"
+            f"--- Full Analysis (Step 1) ---\n{full_analysis}\n\n"
+            f"--- Key Points (Step 2) ---\n{summary_text}"
+        )
+    else:
+        user_content = f"Points to rewrite into a tweet:\n{summary_text}"
 
     payload = {
         "model": Config.VENICE_MODEL_UNCENSORED,
         "messages": [
             {"role": "system", "content": crafter_prompt},
-            {"role": "user", "content": f"Points to rewrite into a tweet:\n{summary_text}"}
+            {"role": "user", "content": user_content}
         ]
     }
 
-    def try_model(model_name, is_fallback=False):
-        """Helper function to try a model with proper error handling."""
-        current_payload = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": crafter_prompt},
-                {"role": "user", "content": f"Points to rewrite into a tweet:\n{summary_text}"}
-            ]
-        }
-        
-        model_type = "fallback" if is_fallback else "primary"
-        logger.info(f"Step 3 (Tweet Crafting): Using {model_type} model {model_name}")
-        
-        response = requests.post(VENICE_URL, json=current_payload, headers=VENICE_HEADERS)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-
-    # Try venice-uncensored first
     try:
-        initial_tweet = try_model(Config.VENICE_MODEL_UNCENSORED)
-        
+        response = requests.post(VENICE_URL, json=payload, headers=VENICE_HEADERS)
+        response.raise_for_status()
+        initial_tweet = response.json()["choices"][0]["message"]["content"].strip()
+
         # Check for banned patterns and retry if found
         banned_patterns = ["Hey there!", "Hi!", "Hello!", "Stay safe", "Be careful", "Be mindful"]
         if any(pattern in initial_tweet for pattern in banned_patterns):
@@ -173,37 +155,14 @@ Provide ONLY a direct answer with specific facts."""
                 "model": Config.VENICE_MODEL_UNCENSORED,
                 "messages": [
                     {"role": "system", "content": strict_prompt},
-                    {"role": "user", "content": f"Original content to improve:\n{summary_text}"}
+                    {"role": "user", "content": user_content}
                 ]
             }
-            
             retry_response = requests.post(VENICE_URL, json=retry_payload, headers=VENICE_HEADERS)
             retry_response.raise_for_status()
             return retry_response.json()["choices"][0]["message"]["content"].strip()
-        
+
         return initial_tweet
-        
-    except requests.exceptions.HTTPError as e:
-        if hasattr(e, 'response') and e.response.status_code == 500:
-            # Venice-uncensored is down, try fallback
-            logger.warning(f"Venice-uncensored returned 500 error, falling back to {Config.VENICE_MODEL_UNCENSORED_FALLBACK}")
-            
-            try:
-                fallback_tweet = try_model(Config.VENICE_MODEL_UNCENSORED_FALLBACK, is_fallback=True)
-                
-                # Check for banned patterns in fallback too
-                banned_patterns = ["Hey there!", "Hi!", "Hello!", "Stay safe", "Be careful", "Be mindful"]
-                if any(pattern in fallback_tweet for pattern in banned_patterns):
-                    logger.warning(f"Fallback tweet also contains banned patterns: {fallback_tweet}")
-                
-                return fallback_tweet
-                
-            except Exception as fallback_error:
-                logger.error(f"Fallback model also failed: {fallback_error}")
-                return Config.ERROR_MESSAGE
-        else:
-            logger.error(f"Error in Step 3 (Tweet Crafting): {e}")
-            return Config.ERROR_MESSAGE
     except Exception as e:
         logger.error(f"Error in Step 3 (Tweet Crafting): {e}")
         return Config.ERROR_MESSAGE 

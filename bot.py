@@ -25,6 +25,12 @@ class VeniceBot:
         self.last_check_time = 0
         self.hourly_reply_count = 0
         self.hourly_check_time = time.time()
+        # Capture process start time in RFC3339 for API filtering and as datetime for local checks
+        self.process_start_dt = datetime.now(timezone.utc)
+        # RFC3339 with milliseconds, e.g., 2025-08-27T03:38:08.694Z
+        ms = int(self.process_start_dt.microsecond / 1000)
+        self.process_start_rfc3339 = f"{self.process_start_dt.strftime('%Y-%m-%dT%H:%M:%S')}.{ms:03d}Z"
+        logger.info(f"Bot process start time captured: {self.process_start_rfc3339}")
         logger.info("Bot initialized successfully.")
 
     def _get_bot_user_id(self):
@@ -60,8 +66,26 @@ class VeniceBot:
     def _is_tweet_too_old(self, tweet):
         """Checks if tweet is older than the configured maximum age."""
         try:
-            # Twitter created_at is in UTC format like "2025-01-14T12:34:56.000Z"
-            tweet_time = datetime.fromisoformat(tweet.created_at.replace('Z', '+00:00'))
+            created_at = getattr(tweet, 'created_at', None)
+            if created_at is None:
+                logger.warning(f"Tweet {tweet.id} missing created_at. Skipping to avoid wasted calls.")
+                return True
+
+            # Support both datetime and string timestamps
+            if isinstance(created_at, str):
+                # Handle RFC3339 like 2025-01-14T12:34:56.000Z
+                if created_at.endswith('Z'):
+                    tweet_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                else:
+                    # Best-effort parse; if it fails, skip
+                    try:
+                        tweet_time = datetime.fromisoformat(created_at)
+                    except Exception:
+                        logger.warning(f"Could not parse tweet {tweet.id} timestamp string '{created_at}'. Skipping.")
+                        return True
+            else:
+                tweet_time = created_at  # Assume datetime
+
             current_time = datetime.now(timezone.utc)
             time_diff = current_time - tweet_time
             
@@ -72,8 +96,8 @@ class VeniceBot:
             logger.debug(f"Tweet {tweet.id} is {time_diff} old (<{Config.MAX_TWEET_AGE_HOURS}h). Processing.")
             return False
         except Exception as e:
-            logger.warning(f"Could not parse tweet {tweet.id} timestamp: {e}. Processing anyway.")
-            return False
+            logger.warning(f"Could not reliably evaluate age for tweet {tweet.id}: {e}. Skipping to avoid wasted calls.")
+            return True
 
     def _extract_context_from_tweet(self, tweet, media_lookup):
         """Extracts context text and images from a tweet, including quote tweets."""
@@ -153,13 +177,16 @@ class VeniceBot:
             if summary == Config.ERROR_MESSAGE:
                 return False
             
-            final_reply = craft_tweet(summary)
+            final_reply = craft_tweet(summary, full_analysis=analysis)
             if not final_reply or final_reply == Config.ERROR_MESSAGE:
                 return False
             
             reply_response = reply_to_tweet(self.client, tweet.id, final_reply)
             if reply_response is not None:
                 self.hourly_reply_count += 1
+                # Set allowed author for this conversation if not set
+                if not self.state.get_allowed_author(tweet.conversation_id):
+                    self.state.set_allowed_author(tweet.conversation_id, tweet.author_id)
                 return True
             else:
                 return False
@@ -186,13 +213,16 @@ class VeniceBot:
             if summary == Config.ERROR_MESSAGE:
                 return False
             
-            final_reply = craft_tweet(summary)
+            final_reply = craft_tweet(summary, full_analysis=analysis)
             if not final_reply or final_reply == Config.ERROR_MESSAGE:
                 return False
             
             reply_response = reply_to_tweet(self.client, tweet.id, final_reply)
             if reply_response is not None:
                 self.hourly_reply_count += 1
+                # Set allowed author for this conversation if not set
+                if not self.state.get_allowed_author(tweet.conversation_id):
+                    self.state.set_allowed_author(tweet.conversation_id, tweet.author_id)
                 return True
             else:
                 return False
@@ -219,6 +249,14 @@ class VeniceBot:
             logger.info(f"Skipping tweet {tweet.id} because it's authored by the bot itself.")
             self.state.add_tweet(tweet.id)
             return
+
+        # Enforce original-author-only follow-ups within a conversation
+        allowed_author = self.state.get_allowed_author(tweet.conversation_id)
+        if allowed_author:
+            if str(tweet.author_id) != str(allowed_author):
+                logger.info(f"Skipping tweet {tweet.id} in conversation {tweet.conversation_id}: author {tweet.author_id} != allowed {allowed_author}.")
+                self.state.add_tweet(tweet.id)
+                return
 
         # Skip tweets older than 24 hours
         if self._is_tweet_too_old(tweet):
@@ -297,7 +335,7 @@ class VeniceBot:
             logger.warning("Hourly reply limit reached. Skipping mention check.")
             return
 
-        mentions = get_mentions(self.client, self.bot_user_id)
+        mentions = get_mentions(self.client, self.bot_user_id, start_time=self.process_start_rfc3339)
         if not mentions or not mentions.data:
             logger.info("No new mentions found.")
             # Update timestamp even when no mentions found
@@ -313,6 +351,26 @@ class VeniceBot:
                 # Efficiently get username with fallback
                 author = user_lookup.get(tweet.author_id)
                 username = author.username if author and hasattr(author, 'username') else 'unknown'
+
+                # Skip mentions created before or at bot start
+                created_at = getattr(tweet, 'created_at', None)
+                if created_at:
+                    if isinstance(created_at, str):
+                        # Normalize to datetime
+                        if created_at.endswith('Z'):
+                            tweet_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        else:
+                            tweet_dt = datetime.fromisoformat(created_at)
+                    else:
+                        tweet_dt = created_at
+                    if tweet_dt <= self.process_start_dt:
+                        logger.info(f"Skipping tweet {tweet.id} created before startup ({created_at}).")
+                        self.state.add_tweet(tweet.id)
+                        continue
+                else:
+                    logger.info(f"Skipping tweet {tweet.id} with no created_at (pre-start safety).")
+                    self.state.add_tweet(tweet.id)
+                    continue
                 
                 logger.info(f"Starting to process tweet {tweet.id} from @{username}")
                 self._process_single_tweet(tweet, media_lookup, user_lookup)
