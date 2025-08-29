@@ -16,7 +16,7 @@ def get_twitter_client():
             consumer_secret=Config.TWITTER_API_SECRET,
             access_token=Config.TWITTER_ACCESS_TOKEN,
             access_token_secret=Config.TWITTER_ACCESS_TOKEN_SECRET,
-            wait_on_rate_limit=True
+            wait_on_rate_limit=False  # Handle rate limits manually for better control
         )
         logger.info("Twitter client initialized successfully.")
         return client
